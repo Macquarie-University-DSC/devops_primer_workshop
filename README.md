@@ -132,7 +132,7 @@ just tests that each individual function of our web app works correctly. We need
 new id's and then deleting them from a database works as expected, to do this we need to have a database instance running
 in our pipeline.
 
-```yml
+```yaml
 name: Elixir Actions
 on: [push]
 jobs:
@@ -242,12 +242,161 @@ and installing all the dependencies used to build the application. Our final ste
 Our next step in building our testing pipeline is to create a build step. Most would consider this part of the CI phase
 since we are not actually deploying anything yet. We are just testing if our application builds successfully. Our first
 step is to create a build configuration in our elixir application.
+
+For this step we will be building using elixir releases. This generates a sandboxed environment with all the
+dependencies required to build the application. This means that on our actual server, we do not need to install a
+erlang runtime.
+
+In order to setup our project follow these steps.
+
+1. First we need to think about what our database will look like in production. I will call the database `tasks_db`,
+   and my user will be my default username, I will also set a custom password for it. Our database url we provide to the
+   api will now look like `ecto://USERNAME:PASSWORD/tasks_db`
+
+2. Next we need to get a secret, this secret we will probably not reuse so no need to remember it, with
+   `mix phx.gen.secret`.
+
+3. We will need to add these to our runtime so execute these commands
+
+```sh
+$ export SECRET_KEY_BASE=the_key_you_generated
+$ export DATABASE_URL=your_database_url
+```
+
+4. We now need to uncomment the line in `config/prod.secret.exs` that describes using releases.
+
+```elixir
+# ## Using releases (Elixir v1.9+)
+#
+# If you are doing OTP releases, you need to instruct Phoenix
+# to start each relevant endpoint:
+
+config :tasks_api, TasksApiWeb.Endpoint, server: true
+
+# Then you can assemble a release by calling `mix release`.
+# See `mix help release` for more information.
+```
+
+and we need to change `use Mix.Config` to `import Config` at the top of the `config.releases.exs` file.
+
+5. Now we need to move this file to `config/releases.exs` with `mv config/prod.secret.exs config/releases.exs`
+
+6. We then need to remove the command that calls the production secrets from the bottom of `config/prod.exs`
+   `import_config "prod.secret.exs"`
+
+7. We are ready to test our build, first install production dependencies and compile then create a releases build.
+
+```sh
+$ mix deps.get --only prod
+$ MIX_ENV=prod mix compile
+$ MIX_ENV=prod mix release
+```
+
+8. Now if this works correctly we have one final step to do before we can start building our build pipeline, we have to
+   set up releases to have a migrate command, and a rollback command for our initial server setup. To do this we create
+   a new file `lib/tasks_api/release.ex` that looks like.
+
+```elixir
+defmodule TasksApi.Release do
+  @app :tasks_api
+
+  def migrate do
+    load_app()
+
+    for repo <- repos() do
+      {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :up, all: true))
+    end
+  end
+
+  def rollback(repo, version) do
+    load_app()
+    {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :down, to: version))
+  end
+
+  defp repos do
+    Application.fetch_env!(@app, :ecto_repos)
+  end
+
+  defp load_app do
+    Application.load(@app)
+  end
+end
+```
+
+All this does is adds the ability to run ecto migrations in our elixir release. We can test our build again, to see if
+it works using the commands previously described.
+
+Note that we do not need to set the environment variables in production since they are compiled into the application.
+
+#### Writing the build pipeline
+
+Our actual build pipeline would be pretty simple. Our first step is to add encrypted secrets to our github actions CI.
+
+Go to your repository where you have your CI setup, go to Settings -> Secrets and click New repository secret.
+
+Remember the command to generate a secret. Run that again and copy, call this secret `SECRET_KEY_BASE` and it's contents
+should be the random string you have generated.
+
+Now remember your database URL, create a new repository secret and it's name should be `DATABASE_URL`, and add your
+database url to the contents.
+
+Let us now update our actions workflow to look like this.
+
+```yaml
+name: Elixir Actions
+on: [push]
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:13.3-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tasks_api_test
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      MIX_ENV: test
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '24.0.2'
+          elixir-version: '1.12.0'
+      - run: mix deps.get 
+      - run: mix test
+
+  build:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: prod
+      SECRET_KEY_BASE: ${{ secrets.SECRET_KEY_BASE }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '24.0.2'
+          elixir-version: '1.12.0'
+      - run: mix compile
+      - run: mix release
+```
+
+All we have done is added a build step. Our build step is just the commands we have previously done, although the
+`needs` tells us to use the files from when we ran the `unit-tests` pipeline. We also set our database url and
+secret key base to the secrets we have created. So we are pretty much finished for the API CI pipeline right now.
+
 ### Building unit testing pipeline in github actions for elm app
 
 ### Building a build pipeline in github actions for elm app
 
 ## Initial server setup for deployment
 
-## Setting up vagrant and ansible for Continuous Deployment
+## Building and Testing our ansible configuration and final server setup
 
-## Final Server Setup
+## Setting up a Continuous Deployment Pipeline
+
