@@ -378,23 +378,125 @@ jobs:
       SECRET_KEY_BASE: ${{ secrets.SECRET_KEY_BASE }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
+      - uses: actions/checkout@v2
       - uses: erlef/setup-beam@v1
         with:
           otp-version: '24.0.2'
           elixir-version: '1.12.0'
+      - run: mix deps.get --only prod
       - run: mix compile
       - run: mix release
+      - uses: actions/upload-artifact@v2
+        with:
+          name: el-releases
+          path: _build/prod/rel/tasks_api/
 ```
 
 All we have done is added a build step. Our build step is just the commands we have previously done, although the
 `needs` tells us to use the files from when we ran the `unit-tests` pipeline. We also set our database url and
-secret key base to the secrets we have created. So we are pretty much finished for the API CI pipeline right now.
+secret key base to the secrets we have created. The last thing we changed was we uploaded what we produced, this is our
+first Continuous Delivery step, later on we will use this build output for automatically deploying on our web server.
+
+Now we have pretty much finished our CI pipeline, pretty easy stuff I reckon!
 
 ### Building unit testing pipeline in github actions for elm app
 
 ### Building a build pipeline in github actions for elm app
 
 ## Initial server setup for deployment
+
+### Creating a CentOS 7 Droplet
+
+#### A quick note on choosing linux distributions
+
+For production servers we generally think about performance, ecosystem, support and stability. Generally speaking we
+don't really care about performance for web applications like these where performance is not a demand. Looking at the
+ecosystem, linux is linux and bsd is bsd, they have mostly the same tools and mostly the same ecosystem. That being said
+CentOS is based on Red Hat Enterprise Linux, so it has tools and is tuned towards enterprise server management. CentOS
+is a free and open source fork of a proprietary linux distribution, sometimes people would rather a completely community
+maintained distribution such as Debian, or FreeBSD. On the other hand support from big companies like Red Hat and SUSE
+is a big deal. Support can mean providing essential security patches when they or needed, or services specific to that
+distribution. Another key part of support is the support period of a distribution, CentOS shines in this area with
+a support period of 10 years ending in 2025 for CentOS 7. This ties into security and stability, in linux distributions
+for production environments we prefer fixed release distributions, as they do not have as many dependancy changes so we
+can ensure our server runs consistantly.
+
+CentOS is run by RedHat and has had some major controversy recently. CentOS 7 is the last long term support CentOS
+distribution, previously CentOS had been a downstream fork of RHEL, it was a copy of RHEL distributions, but recently
+that has changed where CentOS has become a testbed for RHEL distros. As such two Linux Distros have come along as
+community maintained alternatives to fill in the void of CentOS, Rocky Linux and Alma Linux. I recommend checking these
+distributions out since they are really cool!
+
+#### Setting up digital ocean
+
+There are many options for hosting websites, digital ocean and vultr from my experience would be by far the easiest to
+use. That isn't to say that the other's aren't good, but they are generally for larger scale applications.
+
+First log into your digital account, then
+
+1. Click the get started with a droplet button
+
+2. Select CentOS 7.x as your distro of choice.
+
+3. Select a relevant spec for your droplet, anything will do it is a matter of cost and personal preference.
+
+4. Choose whatever region you would like, I use singapore since it is the closest to Sydney.
+
+5. Choose the password option instead of the ssh one, don't select User Data. Some users of digital ocean might like
+   to setup these options up front, but it is my personal preference not to.
+
+6. Choose a hostname for your droplet or leave it as is.
+
+7. Make sure to click the backups option.
+
+8. Now wait for the droplet to be created.
+
+### Setting up the URL for our website
+
+So for getting our domain name, I would use the free namecheap domain provided through the github student developer
+pack.
+
+Why?
+
+1. It's free
+
+2. It has whois guard protection, if someone does a whois on your domain, they will see a bunch of random text rather
+   then your actual personal information.
+
+3. All domain name providers will have essentially the same steps.
+
+Assuming you have already selected a namecheap domain name, we need to setup digital ocean dns servers, so that we can
+use digital ocean to redirect our domains to our web server.
+
+1. Log into namecheap.com and navigate to the Dashboard.
+
+2. Navigate to your domain, and select manage.
+
+3. Under name servers, change to custom dns, and set the nameservers to the following
+
+```
+ns1.digitalocean.com
+ns2.digitalocean.com
+ns3.digitalocean.com
+```
+
+4. Log back into digital ocean and on the `...` next to your droplets name, select add a domain
+
+5. Add these records
+
+```
+A Record:
+hostname: www
+will direct to: your droplet
+
+CNAME Record:
+hostname: @
+is an alias of: www
+
+A Record:
+hostname: api
+will direct to: your droplet
+```
 
 ## Building and Testing our ansible configuration and final server setup
 
