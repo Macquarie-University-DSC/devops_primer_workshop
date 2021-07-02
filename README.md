@@ -76,7 +76,9 @@ just listen.
 5. You NEED some way of getting around, some sort of unix shell. Instructions
    below.
 
-6. You also need to have vagrant and ansible installed on your local computer for testing purposes.
+6. You also need to have vagrant, ansible and VirtualBox installed on your local computer for testing purposes.
+   Installing these on any linux like platform should be relatively simple, would recommend looking up installation
+   instructionsns.
 
 ### Windows Unix Shell
 
@@ -388,8 +390,8 @@ jobs:
       - run: mix release
       - uses: actions/upload-artifact@v2
         with:
-          name: api
-          path: _build/prod/rel/tasks_api/
+          name: _build
+          path: _build/
 ```
 
 All we have done is added a build step. Our build step is just the commands we have previously done, although the
@@ -715,6 +717,80 @@ SELinux has three modes
 Generally it is a good idea to turn selinux to permissive, while deploying a server and change it to enabled later.
 [Changing Selinux state guide](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/8/html/using_selinux/changing-selinux-states-and-modes_using-selinux)
 
+### Postgresql
+
+We need to setup a database to store all our data. This is relatively simple.
+
+1. Postgres already exists in centos, but centos 7 ships with an out of date and unsupported version of postgres. So we
+   need to exclude postgres from the centos default repo. Edit the repo config with
+   `sudo vim /etc/yum.repos.d/CentOS-Base.repo` and change the default config to the following:
+
+```
+[base]
+name=CentOS-$releasever - Base
+mirrorlist=http://mirrorlist.centos.org/?release=$releasever&arch=$basearch&repo=os&infra=$infra
+#baseurl=http://mirror.centos.org/centos/$releasever/os/$basearch/
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+
+exclude=postgresql*
+
+#released updates
+[updates]
+name=CentOS-$releasever - Updates
+mirrorlist=http://mirrorlist.centos.org/?release=$releasever&arch=$basearch&repo=updates&infra=$infra
+#baseurl=http://mirror.centos.org/centos/$releasever/updates/$basearch/
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+
+exclude=postgresql*
+```
+
+2. Install the postgres repo with
+   `sudo yum install https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm`
+
+3. Install postgres with the command `sudo yum install postgresql13-server`, there are a lot of y's that need typing so
+   optionally tell centos to click yes for everything with `sudo yum install -y postgresql13-server`
+
+4. Initialize the database with `sudo /usr/pgsql-13/bin/postgresql-13-setup initdb`
+
+5. Start postgres with `sudo systemctl start postgresql-13`
+
+6. Check postgres is working with `sudo systemctl status postgresql-13`
+
+7. Enable postgres on restart with `sudo systemctl enable postgresql-13`
+
+8. Now we need to switch to the postgres user in order to setup our production database with `sudo -iu postgres`
+
+9. Remember our database url? Now we need to remember what we called our user, and type `createuser --interactive`
+   1. We want to call our user what we called our user in our database url.
+
+   2. We do not want our user to be a super user (type n)
+
+   3. We do not want our user to be able to create new databases (type n)
+
+   4. We do not want our user to be able to create new roles (type n)
+
+10. We now want to create a new database with `createdb tasks_db` where tasks_db is what you called your database in the
+    database url.
+
+11. Log into the postgres interactive shell, with `psql`. Note that is is a sql terminal so commands need to be
+    terminated with a semicolon `;`.
+
+12. Now we need to set the password we set in our database url to our user, do this with the command
+    `ALTER ROLE youruser WITH PASSWORD 'yourpassword';`
+
+13. Now we need to grant our user permissions to manage the database with
+    `GRANT ALL PRIVILEGES ON DATABASE tasks_db TO emendoza;`
+
+14. Exit with Ctrl+D once to exit psql and again to return to your users shell
+
+15. Manage database with `psql -d tasks_db`
+
+16. Run the command `SET TIME ZONE 'UTC';` and press Ctrl+D to finish database setup.
+
+We are now done setting up postgres.
+
 ### Nginx
 
 Nginx is kind of like the server part of our server, we use it to manage routes and http access to our server. Most
@@ -774,6 +850,48 @@ Navigate to your website e.g. http://www.somedomain.me in your browser and see i
 Congratulations we have finished our initial server setup.
 
 ## Building and Testing our ansible configuration and final server setup
+
+Our first step to continuous deployment is using ansible to setup our server for continuous deployment. We will be using
+ansible to automate the installation of our server.
+
+### What the heck even is ansible and vagrant?
+
+Ansible is what we call a configuration management system, it allows us to quickly write scripts similar to devops
+pipelines in github actions that quickly setup and install software. Setting up continuous deployment is not a task of
+just copying and pasting files to a remote server, it involves changing user permissions and installing and updating
+software within the system. We could of course write shell scripts to automate this, and this is the norm actually, but
+as your project grows, this quickly becomes quite hard to manage a script file. Configuration management is easier to
+grow and improve upon. There are two problems involved with configuration management though. One is where you can easily
+mess up your system, and the other is where having a single source that sets up a system is a massive security risk. Not
+dealing with security today, but we need to atleast demonstrate creating a configuration in a testing environment that
+is similar to our production environment but not exactly the same. This is where vagrant comes in.
+
+Vagrant is a command line tool that interfaces with virtual machine software like VirtualBox. Vagrant allows us to
+quickly setup production like virtual machines to test our ansible configurations on.
+
+### Creating a testing virtual machine for the api
+
+1. Add `/.vagrant/`
+
+2. Run `vagrant init centos/7`
+
+3. Run `vagrant up`
+
+4. Run `vagrant ssh` to log into your computer
+
+5. You will need to follow the steps to create the database all over again but this time, we will not create a new user.
+   Just create the database and call it tasks_db_test instead.
+
+That's it!
+
+### Creating ansible configurations for our API
+
+Ansible configurations are called plays and the ansible scripts we write are called playbooks. Our api needs two
+playbooks. One playbook is to setup our database with our application, the other playbook is to move our binaries to the
+local folder, setup proper permissions and setup our server to run our program as a systemd daemon.
+
+1. First we need to define what our servers are. Create a new file called `ansible.cfg` in the root of the tasks api
+   project directory with `touch ansible.cfg`. Open this file in any text editor you like.
 
 ## Setting up a Continuous Deployment Pipeline
 
