@@ -388,7 +388,7 @@ jobs:
       - run: mix release
       - uses: actions/upload-artifact@v2
         with:
-          name: el-releases
+          name: api
           path: _build/prod/rel/tasks_api/
 ```
 
@@ -405,9 +405,7 @@ Now we have pretty much finished our CI pipeline, pretty easy stuff I reckon!
 
 ## Initial server setup for deployment
 
-### Creating a CentOS 7 Droplet
-
-#### A quick note on choosing linux distributions
+### A quick note on choosing linux distributions
 
 For production servers we generally think about performance, ecosystem, support and stability. Generally speaking we
 don't really care about performance for web applications like these where performance is not a demand. Looking at the
@@ -427,7 +425,7 @@ that has changed where CentOS has become a testbed for RHEL distros. As such two
 community maintained alternatives to fill in the void of CentOS, Rocky Linux and Alma Linux. I recommend checking these
 distributions out since they are really cool!
 
-#### Setting up digital ocean
+### Creating a CentOS 7 Droplet
 
 There are many options for hosting websites, digital ocean and vultr from my experience would be by far the easiest to
 use. That isn't to say that the other's aren't good, but they are generally for larger scale applications.
@@ -486,17 +484,294 @@ ns3.digitalocean.com
 
 ```
 A Record:
-hostname: www
+hostname: @
 will direct to: your droplet
 
 CNAME Record:
-hostname: @
-is an alias of: www
+hostname: www
+is an alias of: @
 
 A Record:
 hostname: api
 will direct to: your droplet
 ```
+
+### Setting up SSH
+
+Setting up SSH is pretty easy
+
+1. Run the command `ssh-keygen` and simply press enter through all the options. Note that if you would like to set a
+   password that is fine.
+
+2. Next add ssh to your github account, click your profile icon in the top right, select `settings`, then under SSH and
+   GPG keys click New SSh key on the top right. Copy the your key with the command `cat .ssh/id_rsa.pub` this will print
+   your PUBLIC key to the terminal, as `cat` prints files to the terminal, and `.ssh/id_rsa.pub` is the location of
+   where your key is stored. ssh keys have a private and a public component. The private is the key and only you can
+   access it, the public key is like providing the lock that they key fits so never give your private key away.
+
+3. now in your server instance, find what the servers public ip is (remember to provide instructions for this) and run
+   the command `ssh-copy-id root@yourdomain` where the server ip is the public ip address to your server. (Note:
+   sometimes it takes a while for domains to get registered when switching nameservers, in that case use the ip)
+
+We done for now.
+
+### Users and Permissions
+
+In linux we have users and groups
+
+Linux contains a simple permissions model, each service has permission information, they can be read, written, or
+executed (like opening up an app in windows). You can view permission with the `ls -a` command, it appears with
+something of the form of `drwxrw-r-- user group`, the first letter `d` tells us whether it is a directory or not. The
+next three characters are in the form of `rwx` where `r` is the read permission, `w` is the write permission, `x` is the
+execute permission, and `-` says they do not have the given permission. A file often belongs to a user and a group, the
+permissions tells us what permissions the user who owns the file has, what permissions the group who owns the file has
+and what permissions everyone else (others) has.
+
+Example:
+
+`rw-` - Read and Write permissions but no execute.
+
+`r-x` - Read and execute but no write permission.
+
+Note that `rwx` is repeated three times, the first time is the read, write and execute permissions for a user, the
+second is for a group, and the third is for the entire system commonly called others.
+
+In linux we want to restrict access as much as possible to prevent things from having access to other things they
+shouldn't.
+
+In linux a user is like a user of an account like in windows or mac, and a group is just a group of users. When we add
+permissions to a specific user, only that user can access that resource, but if we need some users to access a resource
+but others not be able to access a given resource, then we can create a group. 
+
+Note on `gpasswd` vs `usermod`
+
+There are two ways to add a user to a group, `usermod -aG somegroup username` and `gpasswd -a username somegroup`
+
+The difference is subtle, but `usermod` modifies the users configuration with options such as changing there default
+terminal shell, or adding and removing groups.
+
+`usermod` has two options that we will look at `-G` which gives a user certain groups, and `-a`, which adds the
+pre-existing groups that a user had to the user. Now the problem is if you accidentally forget the `-a` flag, you end up
+removing the groups a user alread had, and so this can be considered more risky, in practice this rarely happens. On the
+otherhand `gpasswd` can either add or remove groups so it is therefore a safer option.
+
+1. run the command `adduser exampleuser` where the user is your username in my case emendoza.
+
+2. set a passwd for your user with the command `passwd exampleuser`
+
+3. run the command `gpasswd -a exampleuser wheel` this adds our user to the wheel group. In Linux, the wheel group is
+   like the admin role in windows.
+
+4. Logout of ssh with Ctrl+D or type `exit` into the cli.
+
+5. Now repeat the command `ssh-copy-id exampleuser@yourdomain` notice we are now using the example user instead of root.
+
+### Install required software
+
+1. Run command `sudo yum upgrade` to make sure we are downloading the latest versions.
+
+2. Run command `sudo yum install vim-enhanced`
+
+3. Run command `sudo yum install epel-release` to install the red hat extra packages.
+
+### Note on systemctl and services
+
+All operating systems have software that runs in the background, they do things like make sure that the time is
+synchronised with the rest of the world, they provide resources for apps that run in the foreground. These are commonly
+called Daemon services.
+
+In windows it is kind of difficult from my experience (not a windows user tho) to create and manage services. If we want
+to make an app that runs when we start up our computers and runs in the background it can be quite tedious. Linux on the
+other hand has a tool that allows us to do this, it is called systemd and can be managed using systemd service files
+usually with the extensions of `.socket` and `.service` and managed with `systemctl`. Read more on the
+[archwiki page](https://wiki.archlinux.org/index.php/systemd) 
+
+Systemctl has the commands
+
+- `systemctl start servicename` to start a service called servicename
+- `systemctl stop servicename` to stop a service called servicename
+- `systemctl restart servicename` to stop then start a service called servicename
+- `systemctl status servicename` to see if the service activation actually worked
+- `systemctl enable servicename` to make sure that the service starts on system start up e.g. when
+  you turn on your computer or when you restart your computer.
+
+You can view the systemd logs with the `journalctl` command.
+
+`.socket` files often are services that start when they are needed, like a printing service only starts when you need to
+print something, and `.service` files are for services that run all the time.
+
+You can also specify services for specific users only but read the archwiki for that.
+
+### A note on the linux filestructure
+
+The linux filesystem structure is a standard created by the linux foundation and specified under the Filesystem
+Hierarchy Standard, more information can be found on
+[the wikipedia page](https://en.wikipedia.org/wiki/Filesystem_Hierarchy_Standard)
+
+This isn't too important here except when we get to setting up nginx, and is a bit of a point of contention among
+system administrators. To understand why there are some important directories which we have to explain.
+
+The root `/` is where everything goes into, equivalent of the `C:` drive in windows.
+
+The `/etc` directory is where applications put there global configurations, that when they start all configuration
+options and files are mean't to be put here.
+
+The `/usr` directory specifies read only files used by apps, a common example would be icons, music or stuff in a game,
+they are read only because they never need to be modified.
+
+The `/var` directory is kind of like the read and write counter part of the `/usr` directory, things that do need to be
+modified but aren't configuration files often go here.
+
+The `/srv` directory is what causes the controversy, according to the linux standard, files which are mean't to be used
+for servers such as directories which are used as remote file storage like google drive kind of things go here,
+and static website files.
+
+In nginx it has become standard to put your website in the `/var/www` directory, this to me personally isn't the right
+place to put them, some system admins share this opinion while others feel that it is better to follow the standards
+of nginx for consistancy. Nearly all guides on the internet will use `/var/www` while we will be using `/srv/www`
+instead.
+
+### Change ssh settings
+
+We will use vim for this, if you are unfamiliar use replace `vim` with `nano`, but remember, as described in the Unix
+and Linux System Administration Handbook System administrators will judge you so do it descretely if you plan to deploy
+infront of other system admins.
+
+1. enter the command `sudo vim /etc/ssh/sshd_config`
+
+2. change the line `PermitRootLogin yes` to `PermitRootLogin no`
+
+3. change the line `PasswordAuthentication yes` to `PasswordAuthentication no`
+
+4. quit vim with `:wq`
+
+5. reload ssh daemon with `sudo systemctl reload sshd`
+
+6. Test it works before you exit by entering a new terminal and typing `ssh exampleuser@yourdomain`
+
+### Firewall
+
+A server works by exposing all ports available to the outside world. As system administrators one of our primary jobs is
+to restrict the access of the outside world to be able to only access what they need. So we can directly access our
+server, but nobody else should be able to, similarly when we serve our website, we want people only to be able to access
+what they need to see the website, we don't want them to be able to access anything else. A firewall makes it so that
+people can only access ports that we specify, with all other ports still being accessible internally.
+
+#### About firewalld
+
+For this workshop we will use firewalld, it works by having default zones, a zone is an area that the network runs in,
+for example, you might have a zone for local computers in an office, and a zone for computers outside in the public, or
+a zone for just the computer specifically. Each zone might have certain services enabled such as you might have http
+enabled publically for everyone, but only have ssh enabled for users within the local network.
+
+More information about firewalld can be found by googling archwiki firewalld, and you can see what commands are
+available by reading the manual with `man firewall-cmd`.
+
+1. Run command `sudo yum install firewalld`
+
+2. start firewall service with `sudo systemctl start firewalld`
+
+3. add ssh to the firewall permissions list with `sudo firewall-cmd --permanent --add-service=ssh`
+
+4. type `sudo firewall-cmd --relaod` to enable changes
+
+5. similar to before open up a new terminal and see if you can still access the server.
+
+6. if it all works enable changes with `sudo systemctl enable firewalld`
+
+### Timezones
+
+It is worthwhile to change the timezone of the server to the local timezone you are in especially dealing with databases
+and such. As a side note I often change the local timezone of my databases and api's to UTC and let region specific time
+information be handled on the client side.
+
+1. Find which timezone you want by running the command `sudo timedatectl list-timezones`
+
+2. Navigate with the j and the k keys `j` for up and `k` for down. You can also search with the `/` command. for example
+   `/Australia` for all regions in australia. Quick tip, try running `sudo timedatectl list-timezones | grep Au` to
+   search for timezones in Australia.
+
+3. Next set your region as default with `sudo timedatectl set-timezone region/timezone`, for example,
+   `sudo timedatectl set-timezone Australia/Sydney`
+
+4. Confirm with `sudo timedatectl`
+
+### A quick note on SELinux
+
+We will have our first experiences dealing with the pain in the ass that is selinux. SELinux stands for Security
+Enhanced Linux and is like an extra more intense linux permissions layer. Instead of files having just read, write and
+execute permissions they also have policies about what they are allowed to do on the system and what they are used for.
+SELinux on the scale we are using here isn't too bad, and since it is so common for linux files and folders to be used
+for what they are, most of CentOS already has default SELinux policies that we need to enable or restore manually. As a
+website scales, SELinux becomes harder and harder. Learning SELinux is kind of a thing on it's own and so I wouldn't
+stress about it.
+
+SELinux has three modes
+
+- Enabled: if a selinux check fails the service cannot run
+- Permissive: if a selinux check fails an error is logged but service still runs
+- Disabled: selinux policies aren't checked at all.
+
+Generally it is a good idea to turn selinux to permissive, while deploying a server and change it to enabled later.
+[Changing Selinux state guide](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/8/html/using_selinux/changing-selinux-states-and-modes_using-selinux)
+
+### Nginx
+
+Nginx is kind of like the server part of our server, we use it to manage routes and http access to our server. Most
+backend web frameworks like flask, django, actix, and others don't require it since they can serve the html files 
+themselves. On the other hand I often use it anyway because it can be used to easily add advanced features like
+compression, https and http2 to our web pages. In our example we will have three domains that nginx manages
+www.howgood.me, howgood.me and api.howgood.me. All three will use gzip compression and http2, and api will redirect to
+our api endpoint, where www.howgood.me will be our site for users to access, and howgood.me will redirect to
+www.howgood.me.
+
+#### Installing nginx
+
+Nginx is in the extras repo for centos which we already installed before.
+
+1. Simply type `sudo yum install nginx`
+
+2. Start nginx with `sudo systemctl start nginx`
+
+3. Check if nginx is working with `sudo systemctl status nginx`
+
+4. If everything works enable with `sudo systemctl enable nginx`
+
+5. Now add nginx to firewall with `sudo firewall-cmd --add-service=http`
+
+6. Also add https for later `sudo firewall-cmd --add-service=https`
+
+7. Save changes with `sudo firewall-cmd --runtime-to-permanent`
+
+#### Setting up blocks in nginx
+
+In nginx you can set up 'blocks' which point to specific domains, that means you can have multiple different domains
+that point to the same server!
+
+We will only be using a single block so it's kind of pointless but it's handy for using later if for example you wanted
+to deploy a static website and an api on the same server.
+
+1. Make a server staging configurations directory with `sudo mkdir /etc/nginx/sites-available` this is where we write
+   our server configurations.
+
+2. Make a server deployment configurations directory with `sudo mkdir /etc/nginx/sites-enabled` this is where our
+   finished configurations go.
+
+3. Now we need to modify the `/etc/nginx/nginx.conf` file, I will use the command `sudo vim /etc/nginx/nginx.conf`
+replace vim with nano if you aren't comfortable with vim.
+
+Go to where is says `http {` and scroll to below the matching `}` bracket and add the following lines after the bracket.
+
+```
+include /etc/nginx/sites-enabled/*.conf;
+server_names_hash_bucket_size 64;
+```
+
+4. last step is to restart nginx to enable changes with `sudo systemctl restart nginx`
+
+Navigate to your website e.g. http://www.somedomain.me in your browser and see if the installation worked correctly.
+
+Congratulations we have finished our initial server setup.
 
 ## Building and Testing our ansible configuration and final server setup
 
