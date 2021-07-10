@@ -76,10 +76,6 @@ just listen.
 5. You NEED some way of getting around, some sort of unix shell. Instructions
    below.
 
-6. You also need to have vagrant, ansible and VirtualBox installed on your local computer for testing purposes.
-   Installing these on any linux like platform should be relatively simple, would recommend looking up installation
-   instructionsns.
-
 ### Windows Unix Shell
 
 In windows there are many options for getting unix shells. Putty is one, but not recommended for system administration
@@ -114,10 +110,23 @@ See the macos for packages, but everything else should be fine.
 
 ## Setting up CI pipelines for testing
 
-### Building a unit testing pipeline in github actions for elixir api
+### Building a unit testing pipeline in github actions for the rust tasks api
+
+Setting up a CI pipeline we have two goals we need to accomplish
+
+1. We need to Test our application to make sure it functions correctly.
+
+2. We need to build our application for deployment, and test that the build is successful.
+
+In order to do that we will create what we call pipelines and tasks in github actions.
+
+Pipelines are like over arching tasks we need to accomplish, like a testing pipeline, a build pipeline and a deployment
+pipeline.
+
+Steps are the steps needed to take in order to achieve the goal set in the pipeline.
 
 1. Our first step is to fork the tasks api project from the Macquarie DSC's github. Navigate to
-   https://github.com/Macquarie-University-DSC/tasks-site and click the fork button.
+   https://github.com/Macquarie-University-DSC/tasks_api_rs and click the fork button.
 
 2. Our next step should be to clone the repository into our local computer. Navigate to the repository that you have
    forked. Click on Code, and copy and paste the link (or the ssh link if you have set up ssh on your computer), and
@@ -125,7 +134,7 @@ See the macos for packages, but everything else should be fine.
 
 3. In your new directory, create the folder `.github/workflows` with `mkdir .github && mkdir .github/workflows`
 
-4. Create and open a new file, I will call mine `elixir-actions.yml` in the folder `.github/workflows/elixir-actions.yml`
+4. Create and open a new file, I will call mine `deploy-actions.yml` in the folder `.github/workflows/deploy-actions.yml`
 
 5. We now have to create our first pipeline
 
@@ -135,38 +144,46 @@ new id's and then deleting them from a database works as expected, to do this we
 in our pipeline.
 
 ```yaml
-name: Elixir Actions
-on: [push]
+name: Deploy Actions
+on:
+  push:
+    branches:
+      - master
 jobs:
   unit-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     services:
       postgres:
         image: postgres:13.3-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: tasks_api_test
+          POSTGRES_DB: tasks_db_test
         ports:
           - 5432:5432
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     env:
-      MIX_ENV: test
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DATABASE_URL: postgres://postgres:postgres@localhost/tasks_db_test
     steps:
       - uses: actions/checkout@v2
-      - uses: erlef/setup-beam@v1
+      - uses: actions-rs/toolchain@v1
         with:
-          otp-version: '24.0.2'
-          elixir-version: '1.12.0'
-      - run: mix deps.get
-      - run: mix test
+          toolchain: stable
+          components: clippy
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: sqlx-cli
+          version: latest
+          use-tool-cache: true
+      - run: cargo sqlx migrate run
+      - run: cargo clippy
+      - run: cargo test
 ```
 
 Let us break this down.
 
-The name is what we want to call our pipeline, for large projects we could have multiple pipelines doing different things
-for most people they would only have one.
+The name is what we want to call our pipeline, for large projects we could have multiple pipelines doing different
+things for most people they would only have one.
 
 jobs is the steps in the pipeline that we need to take, so far we only will have one step, running unit tests.
 
@@ -175,71 +192,38 @@ remember our steps
 checkout from source control -> run unit tests -> build application
 
 So first we create a job, called unit-tests, which we run our unit tests in, in this job we run on a linux environment,
-github actions only supports running on ubuntu. So we pick `ubuntu-latest`
+github actions only supports running on ubuntu. So we pick `ubuntu-20.04`, this is the latest ubuntu as of writing this
+supported by github actions. We also freeze all our testing platform for consistancy in the future.
 
 We need to have a test database setup and configured, first we need to configure a docker image that will run in the
 background.
 
 Our docker image uses alpine, a lightweight linux distribution for containers, and is hard locked to use 13.3 for
 consistancy. We set a few environment variables on our postgres image, setting the username and password to postgres and
-setting the database name to be tasks_api_test. We also need to forward the 5432 port so that our test can access the
+setting the database name to be tasks_api_test. We also need to forward the `5432` port so that our test can access the
 database, and the last option checks if the database is ready before continuing on to the next step.
-
-We now need to slightly modify the configuration of our test build in our elixir app.
-
-Navigate to `config/test.exs`
-
-Modify the config to look like this
-
-```elixir
-use Mix.Config
-
-# Configure your database
-#
-# The MIX_TEST_PARTITION environment variable can be used
-# to provide built-in test partitioning in CI environment.
-# Run `mix help test` for more information.
-config :tasks_api, TasksApi.Repo,
-  username: "postgres",
-  password: "postgres",
-  database: "tasks_api_test#{System.get_env("MIX_TEST_PARTITION")}",
-  hostname: "localhost",
-  pool: Ecto.Adapters.SQL.Sandbox
-
-if System.get_env("GITHUB_ACTIONS") do
-  config :tasks_api, TasksApi.Repo,
-    username: "postgres",
-    password: "postgres"
-end
-
-# We don't run a server during test. If one is required,
-# you can enable the server option below.
-config :tasks_api, TasksApiWeb.Endpoint,
-  http: [port: 4002],
-  server: false
-
-# Print only warnings and errors during test
-config :logger, level: :warn
-```
-
-Notice that all we do is add an if statement. What this does is that it checks if the `GITHUB_ACTIONS` environment
-variable is set by our devops server, and if it is, it will run the tests on a postgres database using the username and
-password we set.
 
 Our next step is to create environment variables used for testing and deployment. The first environment variable tells
 our app that we will be using a testing environment for this step. I am not sure what the other environment variable
 does not gonna lie but the examples I have seen all have this environment variable set.
 
 Now we need to define the steps in order to actually test the application. If you notice the steps, some are `run`
-commands and some are `use` commands. Github has a collection of github actions for doing certain steps. Like we need to
-copy our project into our testing environment, github already has a pipeline for this called `actions/checkout@v2`. We
-also need to install elixir and the erlang virtual machine for testing purposes. So we use the `erlef/setup-beam@v1`
-action by the erlang team. using `with` sets a predefined consistant setup for testing against the same build
-environment, and we can update this at a later date. We now only have two commands left to run, `mix deps.get` getting
-and installing all the dependencies used to build the application. Our final step is to actually run the unit tests with
-`mix test`.
+commands and some are `uses` commands. Github has a collection of github actions for doing certain steps. Like we need to
+copy our project into our testing environment, github already has a pipeline for this called `actions/checkout@v2`.
 
-### Building a build pipeline in github actions for elixir app
+Our second uses is to install the rust toolchain, it contains everything typically needed to build and test a rust
+application. We install the latest stable version, and we also want to install `clippy`. Clippy is a linting tool, while
+building our application will test that the code compiles correctly, clippy will go a step further and warn us about any
+performance problems. Clippy also warns us about any style errors and syntax issues such as incorrect naming conventions
+and breaking style rules. After that we install the sqlx-cli for creating our database.
+
+From our three run commands the first command is to create a database for testing purposes. The second command is to
+run linting on our application. Our last command is to run the actual unit tests.
+
+The biggest downside to using rust is this testing process due to compile times and the very low resources available on
+the ci platform will take about 10 minutes :(.
+
+### Building a build pipeline in github actions for rust api
 
 Our next step in building our testing pipeline is to create a build step. Most would consider this part of the CI phase
 since we are not actually deploying anything yet. We are just testing if our application builds successfully. Our first
@@ -847,6 +831,28 @@ server_names_hash_bucket_size 64;
 
 Navigate to your website e.g. http://www.somedomain.me in your browser and see if the installation worked correctly.
 
+### Setting up remote deployment
+
+When we remote deploy something, that refers to deploying 
+1. Create a new ansible user with `sudo useradd ansible` and `sudo gpasswd -a ansible wheel`
+
+2. Create a ssh key directory with `sudo mkdir /home/ansible/.ssh`
+
+4. Open a new terminal and create a directory called `priv_keys` here you will store ssh keys temporarily
+
+5. Run `ssh-keygen -t rsa -f ./priv_keys/id_rsa`. Just like a normal ssh keygen.
+
+6. Run the command `cat ./priv_keys/id_rsa.pub` and copy the output.
+
+7. Back in the server type the command `sudo vim home/ansible/.ssh/authorized_keys` and copy and paste the key using
+   insert mode.
+
+8. Also copy `cat ~/.ssh/id_rsa.pub` to this file.
+
+9. Now we have to set the correct permissions, with `sudo chown -R ansible:ansible /home/ansible/.ssh` which sets the
+   owner of the .ssh folder in ansibles home directory to be ansible. Run the command
+   `sudo chmod -R 600 /home/ansible/.ssh` to set the folder to only have read write permissions by the ansible user.
+
 Congratulations we have finished our initial server setup.
 
 ## Building and Testing our ansible configuration and final server setup
@@ -866,23 +872,9 @@ mess up your system, and the other is where having a single source that sets up 
 dealing with security today, but we need to atleast demonstrate creating a configuration in a testing environment that
 is similar to our production environment but not exactly the same. This is where vagrant comes in.
 
-Vagrant is a command line tool that interfaces with virtual machine software like VirtualBox. Vagrant allows us to
-quickly setup production like virtual machines to test our ansible configurations on.
-
-### Creating a testing virtual machine for the api
-
-1. Add `/.vagrant/`
-
-2. Run `vagrant init centos/7`
-
-3. Run `vagrant up`
-
-4. Run `vagrant ssh` to log into your computer
-
-5. You will need to follow the steps to create the database all over again but this time, we will not create a new user.
-   Just create the database and call it tasks_db_test instead.
-
-That's it!
+Vagrant is a frontend for virtual machines. It allows us to quickly set up virtual machines for testing things like
+ansible configurations. It is really easy to use, and you can get a centos/7 instance up and running in three commands.
+Although I could not be bothered to test our ansible configurations so I will not be using vagrant :(.
 
 ### Creating ansible configurations for our API
 
@@ -890,8 +882,13 @@ Ansible configurations are called plays and the ansible scripts we write are cal
 playbooks. One playbook is to setup our database with our application, the other playbook is to move our binaries to the
 local folder, setup proper permissions and setup our server to run our program as a systemd daemon.
 
-1. First we need to define what our servers are. Create a new file called `ansible.cfg` in the root of the tasks api
-   project directory with `touch ansible.cfg`. Open this file in any text editor you like.
+1. In the tasks_api project create a folder to put your ansible stuff in. `mkdir ansible`.
+
+2. First we need to define what our servers are. We define these in ansible 'hosts' or 'inventory' files. These have
+   names of our servers that we need to deploy. Create a hosts file in the ansible directory with these settings.
+   `howgood.me ansible_user=ansible`
+
+3. Now create a playbook called `migrate.yml`. `touch ansible/migrate.yml` and add the following configuration:
 
 ## Setting up a Continuous Deployment Pipeline
 
