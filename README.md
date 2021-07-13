@@ -1,50 +1,66 @@
 # DevOps Primer
 
-This workshop is a primer to beginning system administration and devops. This is a relatively simple deployment of a
-hobby project where we will learn to set up nginx with http 2 compression and tls encryption to serve a dynamic website.
-This will also introduce concepts of DevOps such as continuous integration and continuous delivery using github actions.
-This workshop is mean't to be a primer before we do the real enterprise stuff dealing with google cloud, managed
+This workshop is a primer to beginning system administration and devops. This is
+a relatively simple deployment of a hobby project where we will learn to set up
+nginx with http 2 compression and tls encryption to serve a dynamic website.
+This will also introduce concepts of DevOps such as continuous integration and
+continuous delivery using github actions. This workshop is mean't to be a primer
+before we do the real enterprise stuff dealing with google cloud, managed
 databases, horizontal scaling, load balancers and such.
 
-In this application we are deploying we have a front end and a back end. Both are seperate applications but both will
-be deployed on the same server. Additionally we will have a postgres instance running in the background.
+In this application we are deploying we have a front end and a back end. Both
+are seperate applications but both will be deployed on the same server.
+Additionally we will have a postgres instance running in the background.
 
 ## What is Dev Ops?
 
-Dev ops is kind of like a way of life. It is the idea that we automate a lot of tedious tasks, so that we can focus on
-code and automate tasks that would otherwise be tedious to do on it's own. When we talk about Dev Ops we are really
+Dev ops is kind of like a way of life. It is the idea that we automate a lot of
+tedious tasks, so that we can focus on code and automate tasks that would
+otherwise be tedious to do on it's own. When we talk about Dev Ops we are really
 talking about creating a pipeline, or a continuous flow of code to production.
 
-DevOps is often broken down into two stages, continuous integration and continuous delivery/deployment.
+DevOps is often broken down into two stages, continuous integration and
+continuous delivery/deployment.
 
 Continuous Integration typically looks like this.
 
-1. We push our code from our repository to a repository on the internet (e.g. github)
+1. We push our code from our repository to a repository on the internet (e.g.
+   github)
 
-2. We trigger our CI instance to run tests on the application to verify that it's functions work correctly (called unit
-   testing).
+2. We trigger our CI instance to run tests on the application to verify that
+   it's functions work correctly (called unit testing).
 
-3. We trigger a build, building our application into some runnable form such as a binary or a bytecode.
+3. We trigger a build, building our application into some runnable form such as
+   a binary or a bytecode.
 
-4. We take the output of our build step (called artifacts) and save them, deleting everything else. (Really considered
-   a part of the CD phase)
+4. We take the output of our build step (called artifacts) and save them,
+   deleting everything else. (Really considered a part of the CD phase)
 
-Continuous Delivery and Continuous Deployment are different things and they look very different.
+Continuous Delivery and Continuous Deployment are different things and they look
+very different.
 
-Continuous Delivery is the more modern approach, in continuos delivery we would take our build artifacts from the CI
-phase and build an image of a container or a service like a digital ocean droplet or a virtual server instance and deploy
-it using an orchestration tool (like kubernetes or terraform). We then perform some tests against our production like
-environment (called integration tests, there are also other types of tests), then we deploy to a high availability
-environment (something that lots of users can access 24/7). This is the recommend approach for Dev Ops, it is easy to
-scale both vertically (adding more powerful servers) and horizontally (adding more servers in general). On the other hand
-it costs a lot of $$$ to maintain and use this kind of infrastructure. Another use of continuous delivery is just
-releasing the binaries as is on things like github releases or publishing to the app store. This is more for people like
-games developers who continually build actual video games, and have no server production environment they need to manage.
+Continuous Delivery is the more modern approach, in continuos delivery we would
+take our build artifacts from the CI phase and build an image of a container or
+a service like a digital ocean droplet or a virtual server instance and deploy
+it using an orchestration tool (like kubernetes or terraform). We then perform
+some tests against our production like
+environment (called integration tests, there are also other types of tests),
+then we deploy to a high availability environment (something that lots of users
+can access 24/7). This is the recommend approach for Dev Ops, it is easy to
+scale both vertically (adding more powerful servers) and horizontally (adding
+more servers in general). On the other hand it costs a lot of $$$ to maintain
+and use this kind of infrastructure. Another use of continuous delivery is just
+releasing the binaries as is on things like github releases or publishing to the
+app store. This is more for people like games developers who continually build
+actual video games, and have no server production environment they need to
+manage.
 
-Continuous Deployment on the other hand is taking the artifacts from the CI phase and automating the deployment directly
-on the server using the artifacts. This approach only scales vertically, on the other hand it is great for static
-websites using services like github pages, netlify or gitlab pages. It is also a great option for instances where you
-would want all your services running on the same server (if you had a business that used their own servers).
+Continuous Deployment on the other hand is taking the artifacts from the CI
+phase and automating the deployment directly on the server using the artifacts.
+This approach only scales vertically, on the other hand it is great for static
+websites using services like github pages, netlify or gitlab pages. It is also a
+great option for instances where you would want all your services running on the
+same server (if you had a business that used their own servers).
 
 Essentially CD looks like this.
 
@@ -52,25 +68,29 @@ Get Artifacts -> Test against production environment -> Deploy
 
 ## Prerequisites
 
-In terms of knowledge it would be helpful but not necessarily required to knowledge
+In terms of knowledge it would be helpful but not necessarily required knowledge
 
 - Basic unix/linux file structures and directory structures (not essential)
-- Basic unix/linux commands (just look them up if you struggle)
-- Vim or Vi text editing (can also use the nano text editor, but vscode is not gonna help)
 
-In terms of what software would be required to follow along in case you want to follow along which is not required, can
-just listen.
+- Basic unix/linux commands (just look them up if you struggle)
+
+- Vim or Vi text editing (can also use the nano text editor, but vscode is not
+  gonna help)
+
+In terms of what software would be required to follow along in case you want to
+follow along which is not required, can just listen.
 
 1. A github account connected to your university or instituition (see 2)
 
-2. Would need the student developer pack from github, should take about three seconds and a university email to apply
-   for one.
+2. Would need the student developer pack from github, should take about three
+   seconds and a university email to apply for one.
 
-3. Namecheap domain (free with student developer pack and a .me extension) Look up instructions on github student pack
-   and google.
+3. Namecheap domain (free with student developer pack and a .me extension) Look
+   up instructions on github student pack and google.
 
-4. Some vps (digital ocean droplet recommended) just the account needed setting them up will be covered, also doing
-   these things are provider agnostic, i'll  be using digital ocean but these apply to all platforms, since they all
+4. Some vps (digital ocean droplet recommended) just the account needed setting
+   them up will be covered, also doing these things are provider agnostic, i'll
+   be using digital ocean but these apply to all platforms, since they all
    provide similar experiences.
 
 5. You NEED some way of getting around, some sort of unix shell. Instructions
@@ -78,21 +98,26 @@ just listen.
 
 ### Windows Unix Shell
 
-In windows there are many options for getting unix shells. Putty is one, but not recommended for system administration
-work. The two most recommended options are to either use a Virtual Machine, but they can be quite tedious to set up, or
-you can use wsl. It is recommended that you use wsl.
+In windows there are many options for getting unix shells. Putty is one, but not
+recommended for system administration work. The two most recommended options are
+to either use a Virtual Machine, but they can be quite tedious to set up, or you
+can use wsl. It is recommended that you use wsl.
 
-WSL stands for windows subsytem for linux, and is essentially a linux kernel embedded in windows allowing windows users
-access to the linux cli.
+WSL stands for windows subsytem for linux, and is essentially a linux kernel
+embedded in windows allowing windows users access to the linux cli.
 
-In order to get it follow this guide https://docs.microsoft.com/en-us/windows/wsl/install-win10
+In order to get it follow this guide
+https://docs.microsoft.com/en-us/windows/wsl/install-win10
 
-I would personally recommend downloading either Debian, Fedora or openSUSE for WSL.
+I would personally recommend downloading either Debian, Fedora or openSUSE for
+WSL.
 
-Debian has the most available packages, but you will only be a few here. OpenSUSE Leap, is well regarded as one of the
-best linux distros with good default tools which would probably be my own personal choice. Then Fedora is very similar
-to CentOS which is what we will be using as the deployment environment, generally it is a good idea to have your
-development environment be as close to your deployment environment as possible.
+Debian has the most available packages, but you will only be a few here.
+OpenSUSE Leap, is well regarded as one of the best linux distros with good
+default tools which would probably be my own personal choice. Then Fedora is
+very similar to CentOS which is what we will be using as the deployment
+environment, generally it is a good idea to have your development environment be
+as close to your deployment environment as possible.
 
 The default packages installed with wsl should be fine.
 
@@ -102,7 +127,7 @@ Make sure ssh is installed and enabled, just the client, not the server.
 
 It is recommended to install vim or a cli text editor.
 
-It is also recommended to install rsync for sysadmin work even if it isn't goint to be user here.
+It is also recommended to install rsync for sysadmin work.
 
 ### Linux
 
@@ -116,32 +141,40 @@ Setting up a CI pipeline we have two goals we need to accomplish
 
 1. We need to Test our application to make sure it functions correctly.
 
-2. We need to build our application for deployment, and test that the build is successful.
+2. We need to build our application for deployment, and test that the build is
+   successful.
 
-In order to do that we will create what we call pipelines and tasks in github actions.
+In order to do that we will create what we call pipelines and tasks in github
+actions.
 
-Pipelines are like over arching tasks we need to accomplish, like a testing pipeline, a build pipeline and a deployment
+Pipelines are like over arching tasks we need to accomplish, like a testing
+pipeline, a build pipeline and a deployment pipeline.
+
+Steps are the steps needed to take in order to achieve the goal set in the
 pipeline.
 
-Steps are the steps needed to take in order to achieve the goal set in the pipeline.
+1. Our first step is to fork the tasks api project from the Macquarie DSC's
+   github. Navigate to https://github.com/Macquarie-University-DSC/tasks_api_rs
+   and click the fork button.
 
-1. Our first step is to fork the tasks api project from the Macquarie DSC's github. Navigate to
-   https://github.com/Macquarie-University-DSC/tasks_api_rs and click the fork button.
-
-2. Our next step should be to clone the repository into our local computer. Navigate to the repository that you have
-   forked. Click on Code, and copy and paste the link (or the ssh link if you have set up ssh on your computer), and
+2. Our next step should be to clone the repository into our local computer.
+   Navigate to the repository that you have forked. Click on Code, and copy and
+   paste the link (or the ssh link if you have set up ssh on your computer), and
    run the command `git clone link_you_copied.git`
 
-3. In your new directory, create the folder `.github/workflows` with `mkdir .github && mkdir .github/workflows`
+3. In your new directory, create the folder `.github/workflows` with
+   `mkdir .github && mkdir .github/workflows`
 
-4. Create and open a new file, I will call mine `deploy-actions.yml` in the folder `.github/workflows/deploy-actions.yml`
+4. Create and open a new file, I will call mine `deploy-actions.yml` in the
+   folder `.github/workflows/deploy-actions.yml`
 
 5. We now have to create our first pipeline
 
-Our first pipeline we need to do a couple of things, usually the first step of a CI pipeline is running unit tests, this
-just tests that each individual function of our web app works correctly. We need to test that functions such as creating
-new id's and then deleting them from a database works as expected, to do this we need to have a database instance running
-in our pipeline.
+Our first pipeline we need to do a couple of things, usually the first step of a
+CI pipeline is running unit tests, this just tests that each individual function
+of our web app works correctly. We need to test that functions such as creating
+new id's and then deleting them from a database works as expected, to do this we
+need to have a database instance running in our pipeline.
 
 ```yaml
 name: Deploy Actions
@@ -182,139 +215,89 @@ jobs:
 
 Let us break this down.
 
-The name is what we want to call our pipeline, for large projects we could have multiple pipelines doing different
-things for most people they would only have one.
+The name is what we want to call our pipeline, for large projects we could have
+multiple pipelines doing different things for most people they would only have
+one.
 
-jobs is the steps in the pipeline that we need to take, so far we only will have one step, running unit tests.
+Jobs is the steps in the pipeline that we need to take, so far we only will have
+one step, running unit tests.
 
 remember our steps
 
 checkout from source control -> run unit tests -> build application
 
-So first we create a job, called unit-tests, which we run our unit tests in, in this job we run on a linux environment,
-github actions only supports running on ubuntu. So we pick `ubuntu-20.04`, this is the latest ubuntu as of writing this
-supported by github actions. We also freeze all our testing platform for consistancy in the future.
+So first we create a job, called unit-tests, which we run our unit tests in, in
+this job we run on a linux environment, github actions only supports running on
+ubuntu. So we pick `ubuntu-20.04`, this is the latest ubuntu as of writing this
+supported by github actions. We also freeze all our testing platform for
+consistancy in the future.
 
-We need to have a test database setup and configured, first we need to configure a docker image that will run in the
-background.
+We need to have a test database setup and configured, first we need to configure
+a docker image that will run in the background.
 
-Our docker image uses alpine, a lightweight linux distribution for containers, and is hard locked to use 13.3 for
-consistancy. We set a few environment variables on our postgres image, setting the username and password to postgres and
-setting the database name to be tasks_api_test. We also need to forward the `5432` port so that our test can access the
-database, and the last option checks if the database is ready before continuing on to the next step.
+Our docker image uses alpine, a lightweight linux distribution for containers,
+and is hard locked to use 13.3 for consistancy. We set a few environment
+variables on our postgres image, setting the username and password to postgres
+and setting the database name to be tasks_api_test. We also need to forward the
+`5432` port so that our test can access the database, and the last option checks
+if the database is ready before continuing on to the next step.
 
-Our next step is to create environment variables used for testing and deployment. The first environment variable tells
-our app that we will be using a testing environment for this step. I am not sure what the other environment variable
-does not gonna lie but the examples I have seen all have this environment variable set.
+We set the postgres port of our application in the format required by sqlx. This
+is pretty simple and uses the configuration specified when we set up our
+database.
 
-Now we need to define the steps in order to actually test the application. If you notice the steps, some are `run`
-commands and some are `uses` commands. Github has a collection of github actions for doing certain steps. Like we need to
-copy our project into our testing environment, github already has a pipeline for this called `actions/checkout@v2`.
+Now we need to define the steps in order to actually test the application. If
+you notice the steps, some are `run` commands and some are `uses` commands.
+Github has a collection of github actions for doing certain steps. Like we need
+to copy our project into our testing environment, github already has a pipeline
+for this called `actions/checkout@v2`.
 
-Our second uses is to install the rust toolchain, it contains everything typically needed to build and test a rust
-application. We install the latest stable version, and we also want to install `clippy`. Clippy is a linting tool, while
-building our application will test that the code compiles correctly, clippy will go a step further and warn us about any
-performance problems. Clippy also warns us about any style errors and syntax issues such as incorrect naming conventions
-and breaking style rules. After that we install the sqlx-cli for creating our database.
+Our second uses is to install the rust toolchain, it contains everything
+typically needed to build and test a rust application. We install the latest
+stable version, and we also want to install `clippy`. Clippy is a linting tool,
+while building our application will test that the code compiles correctly,
+clippy will go a step further and warn us about any performance problems. Clippy
+also warns us about any style errors and syntax issues such as incorrect naming
+conventions and breaking style rules. After that we install the sqlx-cli for
+creating our database.
 
-From our three run commands the first command is to create a database for testing purposes. The second command is to
-run linting on our application. Our last command is to run the actual unit tests.
+From our three run commands the first command is to create a database for
+testing purposes. The second command is to run linting on our application. Our
+last command is to run the actual unit tests.
 
-The biggest downside to using rust is this testing process due to compile times and the very low resources available on
-the ci platform will take about 10 minutes :(.
+The biggest downside to using rust is this testing process due to compile times
+and the very low resources available on the ci platform will take about 10
+minutes :(.
 
-### Building a build pipeline in github actions for rust api
+### Creating a build pipeline in github actions for rust api
 
-Our next step in building our testing pipeline is to create a build step. Most would consider this part of the CI phase
-since we are not actually deploying anything yet. We are just testing if our application builds successfully. Our first
-step is to create a build configuration in our elixir application.
+Our next step in building our ci pipeline is to create a build step. Most would
+consider this part of the CI phase since we are not actually deploying anything
+yet. We are just testing if our application builds successfully.
 
-For this step we will be building using elixir releases. This generates a sandboxed environment with all the
-dependencies required to build the application. This means that on our actual server, we do not need to install a
-erlang runtime.
-
-In order to setup our project follow these steps.
-
-1. First we need to think about what our database will look like in production. I will call the database `tasks_db`,
-   and my user will be my default username, I will also set a custom password for it. Our database url we provide to the
-   api will now look like `ecto://USERNAME:PASSWORD/tasks_db`
-
-2. Next we need to get a secret, this secret we will probably not reuse so no need to remember it, with
-   `mix phx.gen.secret`.
-
-3. We will need to add these to our runtime so execute these commands
-
-```sh
-$ export SECRET_KEY_BASE=the_key_you_generated
-$ export DATABASE_URL=your_database_url
-```
-
-4. We now need to uncomment the line in `config/prod.secret.exs` that describes using releases.
-
-```elixir
-# ## Using releases (Elixir v1.9+)
-#
-# If you are doing OTP releases, you need to instruct Phoenix
-# to start each relevant endpoint:
-
-config :tasks_api, TasksApiWeb.Endpoint, server: true
-
-# Then you can assemble a release by calling `mix release`.
-# See `mix help release` for more information.
-```
-
-and we need to change `use Mix.Config` to `import Config` at the top of the `config.releases.exs` file.
-
-5. Now we need to move this file to `config/releases.exs` with `mv config/prod.secret.exs config/releases.exs`
-
-6. We then need to remove the command that calls the production secrets from the bottom of `config/prod.exs`
-   `import_config "prod.secret.exs"`
-
-7. We are ready to test our build, first install production dependencies and compile then create a releases build.
-
-```sh
-$ mix deps.get --only prod
-$ MIX_ENV=prod mix compile
-$ MIX_ENV=prod mix release
-```
-
-8. Now if this works correctly we have one final step to do before we can start building our build pipeline, we have to
-   set up releases to have a migrate command, and a rollback command for our initial server setup. To do this we create
-   a new file `lib/tasks_api/release.ex` that looks like.
-
-```elixir
-defmodule TasksApi.Release do
-  @app :tasks_api
-
-  def migrate do
-    load_app()
-
-    for repo <- repos() do
-      {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :up, all: true))
-    end
-  end
-
-  def rollback(repo, version) do
-    load_app()
-    {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :down, to: version))
-  end
-
-  defp repos do
-    Application.fetch_env!(@app, :ecto_repos)
-  end
-
-  defp load_app do
-    Application.load(@app)
-  end
-end
-```
-
-All this does is adds the ability to run ecto migrations in our elixir release. We can test our build again, to see if
-it works using the commands previously described.
-
-Note that we do not need to set the environment variables in production since they are compiled into the application.
+In this step due to the limitations of centos 7 which uses a very very outdated
+version of the c standard libraries, we need to completely statically compile
+our application. By default rust will only statically compile the rust
+components of our application and will not statically compile the c standard
+library which rust applications use for things like memory allocation. So we
+need to install musl which is a library that is a lightweight copy of the gcc
+c standard library that can also be statically linked.
 
 #### Writing the build pipeline
+
+Our actual build pipeline is relatively simple with a few gotchas. We need to
+checkout our source code first of course for obvious reasons.
+
+Next we need to install the dependancies for musl on ubuntu `musl` and
+`musl-tools`.
+
+We also have to install the musl target rather then just the regular target.
+
+We build our application in release for optimisation and removing debug code.
+
+Our last step is to upload the result as a build artifact for when we deploy our
+application.
+
 
 Our actual build pipeline would be pretty simple. Our first step is to add encrypted secrets to our github actions CI.
 
@@ -329,59 +312,56 @@ database url to the contents.
 Let us now update our actions workflow to look like this.
 
 ```yaml
-name: Elixir Actions
+name: Deploy Actions
 on: [push]
 jobs:
   unit-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     services:
       postgres:
         image: postgres:13.3-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: tasks_api_test
+          POSTGRES_DB: tasks_db_test
         ports:
           - 5432:5432
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     env:
-      MIX_ENV: test
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DATABASE_URL: postgres://postgres:postgres@localhost/tasks_db_test
     steps:
       - uses: actions/checkout@v2
-      - uses: erlef/setup-beam@v1
+      - uses: actions-rs/toolchain@v1
         with:
-          otp-version: '24.0.2'
-          elixir-version: '1.12.0'
-      - run: mix deps.get 
-      - run: mix test
-
+          toolchain: stable
+          components: clippy
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: sqlx-cli
+          version: latest
+          use-tool-cache: true
+      - run: cargo sqlx migrate run
+      - run: cargo clippy
+      - run: cargo test
   build:
     needs: unit-tests
-    runs-on: ubuntu-latest
-    env:
-      MIX_ENV: prod
-      SECRET_KEY_BASE: ${{ secrets.SECRET_KEY_BASE }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
-      - uses: erlef/setup-beam@v1
+      - run: sudo apt-get install musl musl-tools
+      - uses: actions-rs/toolchain@v1
         with:
-          otp-version: '24.0.2'
-          elixir-version: '1.12.0'
-      - run: mix deps.get --only prod
-      - run: mix compile
-      - run: mix release
+          toolchain: stable
+          target: x86_64-unknown-linux-musl
+      - run: cargo build --release --target x86_64-unknown-linux-musl
       - uses: actions/upload-artifact@v2
         with:
           name: _build
-          path: _build/
+          path: target/x86_64-unknown-linux-musl/release/tasks_api_rs
 ```
 
-All we have done is added a build step. Our build step is just the commands we have previously done, although the
-`needs` tells us to use the files from when we ran the `unit-tests` pipeline. We also set our database url and
-secret key base to the secrets we have created. The last thing we changed was we uploaded what we produced, this is our
-first Continuous Delivery step, later on we will use this build output for automatically deploying on our web server.
+So this is what our build step looks like. As a rust project and compiling in
+release mode, it will take so fricken long to compile and test so RIP.
 
 Now we have pretty much finished our CI pipeline, pretty easy stuff I reckon!
 
