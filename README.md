@@ -367,34 +367,118 @@ Now we have pretty much finished our CI pipeline, pretty easy stuff I reckon!
 
 ### Building unit testing pipeline in github actions for elm app
 
+Testing front end functional web applications is so much easier. They are not
+dependant on a storage device like a database, and have no state. As such the
+config would be a lot smaller.
+
+As such our testing pipeline is going to be a lot smaller then our rust testing
+pipeline.
+
+```yaml
+name: Deploy Actions
+on:
+  push:
+    branches:
+      - deploy
+jobs:
+  unit-tests:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: borales/actions-yarn@v2.3.0
+        with:
+          cmd: install
+      - uses: borales/actions-yarn@v2.3.0
+        with:
+          cmd: test
+```
+
+So essentially all we are doing is grabbing our source code from github, then we
+install all our dependancies using yarn. After that we run the test script which
+runs elm-test on our application.
+
 ### Building a build pipeline in github actions for elm app
+
+Just like how the steps to test our frontend were a simplified version of the
+steps to test our server. The steps to build our frontend are also a simplified
+version of the steps to build our backend.
+
+```yaml
+name: Deploy Actions
+on:
+  push:
+    branches:
+      - deploy
+jobs:
+  unit-tests:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: borales/actions-yarn@v2.3.0
+        with:
+          cmd: install
+      - uses: borales/actions-yarn@v2.3.0
+        with:
+          cmd: test
+  build:
+    needs: unit-tests
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: borales/actions-yarn@v2.3.0
+        with:
+          cmd: install
+      - uses: borales/actions-yarn@v2.3.0
+        with:
+          cmd: dist
+      - uses: actions/upload-artifact@v2
+        with:
+          name: _site
+          path: dist/
+```
+
+Coming from testing, and repeating the process, our application just replaces
+the test command with dist, which is a script that runs `parcel build`. Parcel
+will automatically compile and minify all our assets for production use.
+
+After that we upload the build artifacts in the `dist` folder.
+
+Easy stuff.
 
 ## Initial server setup for deployment
 
 ### A quick note on choosing linux distributions
 
-For production servers we generally think about performance, ecosystem, support and stability. Generally speaking we
-don't really care about performance for web applications like these where performance is not a demand. Looking at the
-ecosystem, linux is linux and bsd is bsd, they have mostly the same tools and mostly the same ecosystem. That being said
-CentOS is based on Red Hat Enterprise Linux, so it has tools and is tuned towards enterprise server management. CentOS
-is a free and open source fork of a proprietary linux distribution, sometimes people would rather a completely community
-maintained distribution such as Debian, or FreeBSD. On the other hand support from big companies like Red Hat and SUSE
-is a big deal. Support can mean providing essential security patches when they or needed, or services specific to that
-distribution. Another key part of support is the support period of a distribution, CentOS shines in this area with
-a support period of 10 years ending in 2025 for CentOS 7. This ties into security and stability, in linux distributions
-for production environments we prefer fixed release distributions, as they do not have as many dependancy changes so we
-can ensure our server runs consistantly.
+For production servers we generally think about performance, ecosystem, support
+and stability. Generally speaking we don't really care about performance for web
+applications like these where performance is not a demand. Looking at the
+ecosystem, linux is linux and bsd is bsd, they have mostly the same tools and
+mostly the same ecosystem. That being said CentOS is based on Red Hat Enterprise
+Linux, so it has tools and is tuned towards enterprise server management. CentOS
+is a free and open source fork of a proprietary linux distribution, sometimes
+people would rather a completely community maintained distribution such as
+Debian, or FreeBSD. On the other hand support from big companies like Red Hat
+and SUSE is a big deal. Support can mean providing essential security patches
+when they or needed, or services specific to that distribution. Another key part
+of support is the support period of a distribution, CentOS shines in this area
+with a support period of 10 years ending in 2025 for CentOS 7. This ties into
+security and stability, in linux distributions for production environments we
+prefer fixed release distributions, as they do not have as many dependancy
+changes so we can ensure our server runs consistantly.
 
-CentOS is run by RedHat and has had some major controversy recently. CentOS 7 is the last long term support CentOS
-distribution, previously CentOS had been a downstream fork of RHEL, it was a copy of RHEL distributions, but recently
-that has changed where CentOS has become a testbed for RHEL distros. As such two Linux Distros have come along as
-community maintained alternatives to fill in the void of CentOS, Rocky Linux and Alma Linux. I recommend checking these
+CentOS is run by RedHat and has had some major controversy recently. CentOS 7 is
+the last long term support CentOS distribution, previously CentOS had been a
+downstream fork of RHEL, it was a copy of RHEL distributions, but recently that
+has changed where CentOS has become a testbed for RHEL distros. As such two
+Linux Distros have come along as community maintained alternatives to fill in
+the void of CentOS, Rocky Linux and Alma Linux. I recommend checking these
 distributions out since they are really cool!
 
 ### Creating a CentOS 7 Droplet
 
-There are many options for hosting websites, digital ocean and vultr from my experience would be by far the easiest to
-use. That isn't to say that the other's aren't good, but they are generally for larger scale applications.
+There are many options for hosting websites, digital ocean and vultr from my
+experience would be by far the easiest to use. That isn't to say that the
+other's aren't good, but they are generally for larger scale applications.
 
 First log into your digital account, then
 
@@ -402,12 +486,15 @@ First log into your digital account, then
 
 2. Select CentOS 7.x as your distro of choice.
 
-3. Select a relevant spec for your droplet, anything will do it is a matter of cost and personal preference.
+3. Select a relevant spec for your droplet, anything will do it is a matter of
+   cost and personal preference.
 
-4. Choose whatever region you would like, I use singapore since it is the closest to Sydney.
+4. Choose whatever region you would like, I use singapore since it is the
+   closest to Sydney.
 
-5. Choose the password option instead of the ssh one, don't select User Data. Some users of digital ocean might like
-   to setup these options up front, but it is my personal preference not to.
+5. Choose the password option instead of the ssh one, don't select User Data.
+   Some users of digital ocean might like to setup these options up front, but
+   it is my personal preference not to.
 
 6. Choose a hostname for your droplet or leave it as is.
 
@@ -417,26 +504,28 @@ First log into your digital account, then
 
 ### Setting up the URL for our website
 
-So for getting our domain name, I would use the free namecheap domain provided through the github student developer
-pack.
+So for getting our domain name, I would use the free namecheap domain provided
+through the github student developer pack.
 
 Why?
 
 1. It's free
 
-2. It has whois guard protection, if someone does a whois on your domain, they will see a bunch of random text rather
-   then your actual personal information.
+2. It has whois guard protection, if someone does a whois on your domain, they
+   will see a bunch of random text rather then your actual personal information.
 
 3. All domain name providers will have essentially the same steps.
 
-Assuming you have already selected a namecheap domain name, we need to setup digital ocean dns servers, so that we can
-use digital ocean to redirect our domains to our web server.
+Assuming you have already selected a namecheap domain name, we need to setup
+digital ocean dns servers, so that we can use digital ocean to redirect our
+domains to our web server.
 
 1. Log into namecheap.com and navigate to the Dashboard.
 
 2. Navigate to your domain, and select manage.
 
-3. Under name servers, change to custom dns, and set the nameservers to the following
+3. Under name servers, change to custom dns, and set the nameservers to the
+   following
 
 ```
 ns1.digitalocean.com
@@ -444,7 +533,8 @@ ns2.digitalocean.com
 ns3.digitalocean.com
 ```
 
-4. Log back into digital ocean and on the `...` next to your droplets name, select add a domain
+4. Log back into digital ocean and on the `...` next to your droplets name,
+   select add a domain
 
 5. Add these records
 
@@ -466,18 +556,23 @@ will direct to: your droplet
 
 Setting up SSH is pretty easy
 
-1. Run the command `ssh-keygen` and simply press enter through all the options. Note that if you would like to set a
-   password that is fine.
+1. Run the command `ssh-keygen` and simply press enter through all the options.
+   Note that if you would like to set a password that is fine.
 
-2. Next add ssh to your github account, click your profile icon in the top right, select `settings`, then under SSH and
-   GPG keys click New SSh key on the top right. Copy the your key with the command `cat .ssh/id_rsa.pub` this will print
-   your PUBLIC key to the terminal, as `cat` prints files to the terminal, and `.ssh/id_rsa.pub` is the location of
-   where your key is stored. ssh keys have a private and a public component. The private is the key and only you can
-   access it, the public key is like providing the lock that they key fits so never give your private key away.
+2. Next add ssh to your github account, click your profile icon in the top
+   right, select `settings`, then under SSH and GPG keys click New SSh key on
+   the top right. Copy the your key with the command `cat .ssh/id_rsa.pub` this
+   will print your PUBLIC key to the terminal, as `cat` prints files to the
+   terminal, and `.ssh/id_rsa.pub` is the location of where your key is stored.
+   ssh keys have a private and a public component. The private is the key and
+   only you can access it, the public key is like providing the lock that they
+   key fits so never give your private key away.
 
-3. now in your server instance, find what the servers public ip is (remember to provide instructions for this) and run
-   the command `ssh-copy-id root@yourdomain` where the server ip is the public ip address to your server. (Note:
-   sometimes it takes a while for domains to get registered when switching nameservers, in that case use the ip)
+3. now in your server instance, find what the servers public ip is (remember to
+   provide instructions for this) and run the command
+   `ssh-copy-id root@yourdomain` where the server ip is the public ip address to
+   your server. (Note: sometimes it takes a while for domains to get registered
+   when switching nameservers, in that case use the ip)
 
 We done for now.
 
