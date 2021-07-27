@@ -12,6 +12,10 @@ In this application we are deploying we have a front end and a back end. Both
 are seperate applications but both will be deployed on the same server.
 Additionally we will have a postgres instance running in the background.
 
+What we are really doing here is making heroku from scratch. Kind of cool but
+also very unnecessary. On the other hand, having this background knowledge of
+how it all works and ci/cd pipelines helps us when you use packer and terraform.
+
 ## What is Dev Ops?
 
 Dev ops is kind of like a way of life. It is the idea that we automate a lot of
@@ -299,21 +303,35 @@ Our last step is to upload the result as a build artifact for when we deploy our
 application.
 
 
-Our actual build pipeline would be pretty simple. Our first step is to add encrypted secrets to our github actions CI.
+Our actual build pipeline would be pretty simple. Our first step is to add
+encrypted secrets to our github actions CI.
 
-Go to your repository where you have your CI setup, go to Settings -> Secrets and click New repository secret.
+Go to your repository where you have your CI setup, go to Settings -> Secrets
+and click New repository secret.
 
-Remember the command to generate a secret. Run that again and copy, call this secret `SECRET_KEY_BASE` and it's contents
-should be the random string you have generated.
+Now remember your database URL, create a new repository secret and it's name
+should be `DATABASE_URL`, and add your database url to the contents.
 
-Now remember your database URL, create a new repository secret and it's name should be `DATABASE_URL`, and add your
-database url to the contents.
+So the reason you need to set up DATABASE_URL as a secret is because I made the
+app take the database URL at compile time, setting the DATABASE_URL at compile
+time means that we do not need to pass it as a variable in our web server which
+makes security easier for us. I am sure there is a way to decompile code and
+find our database secret, and there are more secure methods like not having
+artifacts exposed at all and using hashicorp vault, but this is a lot of work to
+do for a hobby project so you should be fine.
+
+We compile our code without a database by setting the `SQLX_OFFLINE` environment
+variable to be true. This just means we don't need to set up a database in
+production for compile time type checking instead we can use a json file.
 
 Let us now update our actions workflow to look like this.
 
 ```yaml
 name: Deploy Actions
-on: [push]
+on:
+  push:
+    branches:
+      - deployed
 jobs:
   unit-tests:
     runs-on: ubuntu-20.04
@@ -346,6 +364,9 @@ jobs:
   build:
     needs: unit-tests
     runs-on: ubuntu-20.04
+    env:
+      SQLX_OFFLINE: true
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@v2
       - run: sudo apt-get install musl musl-tools
@@ -1013,4 +1034,224 @@ our files to our server instance.
    `sudo chmod 600 /home/www/.ssh/authorized_keys` to set the folder to only
    have read/write permissions by the www user.
 
+10. Lastly add the `www` user to the `nginx` group so nginx can access our
+    stuff. Using `sudo gpasswd -a www nginx`
 
+### Configure /srv folder
+
+Next step is we need to prep the folders for our nginx config.
+
+1. Make the directories for our static components and our api with
+   `sudo mkdir /srv/api` and `sudo mkdir /srv/www`
+
+2. Change the permissions on `/srv` to have the owner and group www with,
+   `sudo chown -R www:www /srv`
+
+### Setting up a remote deployment pipeline for our API
+
+It is now time to create our deployment pipeline or CD pipeline for our REST
+API. This is pretty easy, but the hard part of it is creating secrets.
+
+#### Setting up secrets again
+
+First thing we want to is to add secrets to our repository. For our API we need
+to add a secret for setting up ssh from our github actions page, to our web
+server. 
+
+1. Navigate to Settings -> Secrets, on the github page.
+
+2. Add a new repository secret on the top left.
+
+3. Set the name to `DEPLOY_KEY`, and the value to the private key you generated,
+   for the `www` user. Commonly `id_rsa`
+
+#### Creating our deploy pipeline
+
+Our deployment pipeline looks like this.
+
+```yaml
+...
+  deploy:
+    needs: build
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/download-artifact@v2
+        with:
+          name: _build
+      - run: ./perms.sh
+      - uses: Burnett01/rsync-deployments@4.1
+        with:
+          switches: -avz --delete
+          path: tasks_api_rs
+          remote_path: /srv/api/tasks_api_rs
+          remote_host: howgood.me
+          remote_user: www
+          remote_key: ${{ secrets.DEPLOY_KEY }}
+      - uses: Burnett01/rsync-deployments@4.1
+        with:
+          switches: -avzr --delete
+          path: migrations/
+          remote_path: /srv/api/migrations/
+          remote_host: howgood.me
+          remote_user: www
+          remote_key: ${{ secrets.DEPLOY_KEY }}
+```
+
+So we set our `DATABASE_URL` environment variable from the secrets we created.
+Then for our steps we checkout our source code again. The reason for this is
+that we have database migrations files that we also need to push to our database
+in our repo. If we just sent the binary to our server it would fail.
+
+We download the artifact, when we download an artifact from github, it removes
+all previous build permissions. We need to set our permissions again otherwise
+it won't run.
+
+So we create a script to restore permissions which I called perms.sh, add
+execute permissions to this script with `chmod +x perms.sh`.
+
+Our script looks like.
+
+```sh
+#!/bin/sh
+
+chmod 755 tasks_api_rs
+```
+
+755 will add read and execute permissions to all our users, and write
+permissions to just the `www` user.
+
+Our last two steps is to push the binary and the migrations to our server. We do
+this by using the `-avz --delete` and `-avzr --delete` switches, those delete
+a folder if it existed there before. it also compresses the folder so sending
+the file is a lot quicker. The `-r` flag lets you copy an entire directory
+and all it's contents instead of a single file.
+
+#### Serving our api
+
+We want to serve our api with things like compression of our json responses, we
+want to enable http2 for compression of everything including our HTTP Headers.
+
+We also want to do things like we want to set up tls v1.3 so our api is
+encrypted and we won't run into issues like having being blocked by browsers.
+
+Using vim we can create a new config for our web api with
+`sudo vim /etc/nginx/sites-available/api.conf`
+
+and create the config with:
+
+```
+server {
+    server_name api.yourdomain.me;
+    listen 80;
+
+    gzip on;
+    gzip_types application/json;
+    gzip_proxied no-cache no-store private;
+    gunzip on;
+
+    location / {
+       proxy_pass http://localhost:8080;
+    }
+}
+```
+
+If we try run the app it will not work because selinux is blocking nginx from
+forwarding so we need to fix this with
+`sudo setsebool -P httpd_can_network_relay 1`
+
+What does our nginx config actually do?
+
+Server name will make your api be available at a subroute like `api.yourdomain`
+instead of the standard `youdomain`.
+
+listen 80, will make nginx listen to port 80, which is the default for insecure
+http requests.
+
+gzip will turn on gzip compression, for json responses and unencrypt responses.
+
+The last command with forward all requests to our api which listens to port
+8080.
+
+Now setting up our api to run in the background and restart whenever we push a
+change is super easy with systemd.
+
+First we need to create a new systemd file to start our application in the
+background. To do this we need to create a systemd unit file with the service
+extension which means it runs in the background and starts as soon as our server
+starts.
+
+We make this file with `sudo vim /etc/systemd/system/tasks-api.service`
+
+```
+[Unit]
+Description=tasks-api
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5s
+Environment="RUST_LOG=tasks_api_rs=info,actix=info"
+WorkingDirectory=/srv/api
+ExecStart=/srv/api/tasks_api_rs
+
+[Install]
+WantedBy=multi-user.target
+```
+
+This file just means that it will start our application, and restart it every
+5 seconds if it crashes.
+
+Since we created a new systemd file we need to reload systemd with
+`sudo systemd daemon-reload`.
+
+We can now start and enable this with `sudo systemctl start tasks-api`, 
+`sudo systemctl status tasks-api` and `sudo systemctl enable tasks-api`.
+
+We can activate our application in http with, `sudo systemctl restart nginx`.
+
+Our last step for setting up our api with systemd is creating a service that
+restarts our service when we modify our api.
+
+To do this we need to create two new services, a service that runs once and
+restarts our systemd service. We also need a service that listens for changes
+and triggers our restarting service.
+
+So `sudo vim /etc/systemd/system/tasks-api-listner.service`
+
+```
+Description=tasks-api service restart
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl restart tasks-api.service
+
+[Install]
+WantedBy=multi-user.target
+```
+
+and `sudo vim /etc/systemd/system/tasks-api-listner.path`
+
+```
+[Path]
+PathModified=/srv/api
+
+[Install]
+WantedBy=multi-user.target
+```
+
+We need to start and enable these services with,
+`sudo systemctl start tasks-api-listner.path` and
+`sudo systemctl enable tasks-api-listner.path`
+
+We are going to set up http 2 and lets encrypt for both our backend and our
+frontend at the same time.
+
+### Setting up remote deployment for our elm site
+
+First thing we need to do is copy the steps for setting up secrets from the API,
+up to setting up DEPLOY_KEY.
+
+Our pipeline is going to be pretty much the same as our back end.
