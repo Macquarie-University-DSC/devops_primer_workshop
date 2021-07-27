@@ -1209,6 +1209,12 @@ Since we created a new systemd file we need to reload systemd with
 We can now start and enable this with `sudo systemctl start tasks-api`, 
 `sudo systemctl status tasks-api` and `sudo systemctl enable tasks-api`.
 
+We can enable the systemd config we wrote with
+`sudo ln -s /etc/nginx/sites-available/api.conf /etc/nginx/sites-enabled/api.conf`.
+This creates a symbolic link to our config to a location that nginx can read,
+being symbolic if we change anything in sites-available, it will change in
+sites-enabled.
+
 We can activate our application in http with, `sudo systemctl restart nginx`.
 
 Our last step for setting up our api with systemd is creating a service that
@@ -1244,7 +1250,7 @@ WantedBy=multi-user.target
 
 We need to start and enable these services with,
 `sudo systemctl start tasks-api-listner.path` and
-`sudo systemctl enable tasks-api-listner.path`
+`sudo systemctl enable tasks-api-listner.path`.
 
 We are going to set up http 2 and lets encrypt for both our backend and our
 frontend at the same time.
@@ -1255,3 +1261,123 @@ First thing we need to do is copy the steps for setting up secrets from the API,
 up to setting up DEPLOY_KEY.
 
 Our pipeline is going to be pretty much the same as our back end.
+
+```
+  deploy:
+    needs: build
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/download-artifact@v2
+        with:
+          name: _site
+          path: ./www
+      - run: chmod -R 755 www
+      - uses: Burnett01/rsync-deployments@4.1
+        with:
+          switches: -avzr --delete
+          path: www/
+          remote_path: /srv/www/
+          remote_host: howgood.me
+          remote_user: www
+          remote_key: ${{ secrets.DEPLOY_KEY }}
+```
+
+Instead of having a script I just run the command otherwise we would have to
+copy the script to the local directory. This makes sense for the api since we
+clone the repo anyway for migrations, but not for the web server.
+
+#### Creating a nginx configuration
+
+Like our api our nginx configuration is similar, except it serves our
+`index.html` file and it compresses css and javascript files as well.
+
+`/etc/nginx/sites-available/www.conf`
+
+```
+server {
+    server_name www.yourdomain.me;
+    listen 80;
+
+    root /srv/www;
+
+    index index.html;
+    
+
+    gzip on;
+    gzip_types text/css application/x-javascript text/javascript;
+    gzip_proxied any;
+
+    location / {
+        try_files $uri $uri/ = 404;
+    }
+}
+```
+
+Now symbolic link this file to sites enabled with
+`ln -s /etc/nginx/sites-available/www.conf /etc/nginx/sites-enabled/www.conf`
+
+We also need to restore the selinux policies for our static files since
+otherwise selinux will block nginx from being able to run the files.
+
+In our run the command `sudo restorecon -Rv /srv/www`
+
+Now you can restart nginx with `sudo systemctl restart nginx` and go to the
+website to see it.
+
+#### Final step, adding lets encrypt and http 2
+
+Adding SSL and HTTP over TLSv1.3 which encrypts your website between your
+browser and your server is probably the easiest thing ever to do in 2021.
+
+It is easy with a powerful tool called `certbot-nginx` which modifies your
+nginx configuration automatically and enables encryption.
+
+1. install certbot with `sudo yum install certbot-nginx`
+
+2. obtain a certificate by typing
+   `sudo certbot --nginx -d www.yourdomain -d api.yourdomain`
+
+3. type your email address used for renewal and security purposes (for me
+   it's 'admin@effectfree.dev')
+
+4. Read through the options and select which ones you want (I just put yes for
+   everything)
+
+6. Last step is to modify our nginx configurations we made, you will see they
+   are now slightly different, next to `listen 443 ssl` change those lines to be
+   `listen 443 ssl http2` and it is literally as easy as that.
+
+7. Now setting up auto renewal requires cron.
+
+#### A Quick Note on cron
+
+In linux system administration we often want to automate tasks needed to be
+performed every day, or every few days. As such there are multiple ways to do
+this. One of them is cronjobs. Cron is a service that will run a service or a
+script or something after a set period of time. Another alternative is to use
+systemd, systemd has multiple file types, some common ones are timers which run
+at a set period in the day, sockets which listen and activate software when
+needed, and services which run through the duration from startup to shutdown.
+Creating cron jobs is easy, we can use the crontab command to quickly create
+cronjobs.
+
+First test nginx renewel with `sudo certbot renew --dry-run`
+
+`sudo crontab -e`
+
+add this line
+
+```cron
+...
+0 3 * * * certbot renew --quiet
+```
+
+this command makes cron run certbot renew at 3am every day.
+
+Once this is complete you can test your configuration with the
+[SSL Labs Server Test](https://www.ssllabs.com/ssltest/)
+
+Congratulations, you made a badly optimised and configured heroku clone.
+
+For further reading check out the `Linux and Unix System Administrators Handbook`
+and check out packer and terraform for better deployment strategies.
